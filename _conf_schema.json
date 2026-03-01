@@ -1,0 +1,63 @@
+{
+    "filter_prompt" : {
+        "description" : "审核提示词",
+        "hint" : "审核的pormpt，需要在人格中添加，可参见readme并根据自身需要酌情修改",
+        "type" : "string",
+        "_special" : "select_persona"
+    },
+    "filter_config" : {
+        "description" : "审核模型提供商",
+        "hint" : "建议使用有thinking功能的模型以获得最好效果",
+        "type" : "string",
+        "_special" : "select_provider"
+    },
+    "filter_allow" : {
+        "description" : "审核通过关键词",
+        "hint" : "通过审核后模型的预期输出，如果没有改动审核提示词不要改动此项",
+        "type" : "string",
+        "default" : "allow"
+    },
+    "filter_block" : {
+        "description" : "审核未通过关键词",
+        "hint" : "未通过审核后模型的预期输出，如果没有改动审核提示词不要改动此项",
+        "type" : "string",
+        "default" : "block"
+    },
+    "filter_mode" : {
+        "description" : "是否开启严格模式",
+        "hint" : "严格模式：输出不含通过关键词就拒绝回复；非严格模式：输出含未通过关键词才拒绝回复",
+        "type" : "bool"
+    },
+    "debug_mode" : {
+        "description" : "是否开启debug模式",
+        "hint" : "debug模式：在利用违禁对话人设发送消息后发送一条审核模型返回的原始数据，可用于优化提示词",
+        "type" : "bool"
+    },
+    "speak_prompt" : {
+        "description" : "违禁对话人设",
+        "hint" : "如果发现消息违禁，将会使用这个人设进行回复",
+        "type" : "string",
+        "_special" : "select_persona"
+    },
+    "speak_config" : {
+        "description" : "违禁对话提供商",
+        "hint" : "违禁消息会交由这个模型处理",
+        "type" : "string",
+        "_special" : "select_provider"
+    },
+    "speak_start" : {
+        "description" : "违禁消息回复前缀",
+        "hint" : "可以给你的违禁消息回复加上一个前缀",
+        "type" : "text"
+    },
+    "speak_end" : {
+        "description" : "违禁消息回复后缀",
+        "hint" : "可以给你的违禁消息回复加上一个后缀",
+        "type" : "text"
+    },
+    "available_platforms" : {
+        "description" : "可用消息平台",
+        "hint" : "你现在拥有的消息平台名称（例如aiocqhttp）",
+        "type" : "list"
+    }
+}
