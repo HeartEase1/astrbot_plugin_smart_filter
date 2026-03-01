@@ -26,9 +26,10 @@ class MyPlugin(Star):
             await self.handle_update()
 
     async def handle_update(self):
-        for key in list(self.ban_list["available_platforms"]):
+        for key in list(self.ban_list["prohibits"]):
             if key not in self.config["available_platforms"]:
                 self.ban_list["prohibits"].pop(key, None)
+        for key in list(self.ban_list["banners"]):
             if key not in self.config["available_platforms"]:
                 self.ban_list["banners"].pop(key, None)
         for key in self.config["available_platforms"]:
@@ -328,10 +329,6 @@ class MyPlugin(Star):
                 "prohibits": {},
                 "banners": {},
             }
-            for plat in default_banlist["available_platforms"]:
-                default_banlist["prohibits"][plat] = {}
-                default_banlist["banners"][plat] = {}
-
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(default_banlist, f, ensure_ascii=False, indent=4)
             return default_banlist
