@@ -58,6 +58,38 @@ class MyPlugin(Star):
         self.ban_list["banners"][platform][user_id] = future.timestamp()
         return "Success", future.strftime("%Y年%m月%d日 %H:%M:%S")
 
+    def check_user(
+        self,
+        user_id: str,
+        config: AstrBotConfig,
+        plat_name: list,
+        times: str | None = None,
+    ) -> MessageChain | None:
+        if user_id not in config["admins_id"]:
+            chain = MessageChain().message(
+                "此用户仅管理员有权使用，你不是管理员，无权使用"
+            )
+            logger.error(f"user id:{user_id}")
+            return chain
+        for plat in plat_name:
+            if plat not in self.ban_list["available_platforms"]:
+                chain = MessageChain().message(f"消息平台{plat}不存在，请核实后重试")
+                return chain
+        if times is not None:
+            try:
+                ban_time = pendulum.parse(times)
+                if not isinstance(ban_time, pendulum.Duration):
+                    chain = MessageChain().message(
+                        "这不是一个符合ISO8601规范的持续时间，请核实后再试。"
+                    )
+                    return chain
+            except pendulum.parsing.exceptions.ParserError:
+                chain = MessageChain().message(
+                    "这不是一个符合ISO8601规范的持续时间，请核实后再试。"
+                )
+                return chain
+        return None
+
     @filter.command("sf_ban")
     async def sf_ban(
         self,
@@ -70,35 +102,20 @@ class MyPlugin(Star):
         async with self._sf_lock:
             if plat_name is None:
                 plat_name = event.platform_meta.name
-
-            if plat_name not in self.ban_list["available_platforms"]:
-                chain = MessageChain().message(
-                    f"消息平台{plat_name}不存在。目前可用的消息平台{self.ban_list['available_platforms']}，详情请联系管理员"
-                )
-                await event.send(chain)
-                return
             config = self.context.get_config(event.unified_msg_origin)
-            if event.get_sender_id() not in config["admins_id"]:
-                chain = MessageChain().message("您不是管理员，无权使用该命令")
-                await event.send(chain)
-                return
-            try:
-                ban_time = pendulum.parse(times)
-            except pendulum.parsing.exceptions.ParserError:
-                chain = MessageChain().message(
-                    "这不是一个符合ISO8601规范的时间持续时间，请在核实后重试"
-                )
-                await event.send(chain)
-                return
-            state, detail = await self.ban_user(user_id, plat_name, ban_time)
-            if state == "Success":
-                chain = MessageChain().message(
-                    f"用户{user_id}封禁成功，预计解封时间{detail}"
-                )
-            else:
-                chain = MessageChain().message(f"{detail}")
+            chain = self.check_user(event.get_sender_id(), config, [plat_name], times)
 
-            self.write_ban(self.ban_list)
+            if chain is None:
+                ban_time = pendulum.parse(times)
+                state, detail = await self.ban_user(user_id, plat_name, ban_time)
+                if state == "Success":
+                    chain = MessageChain().message(
+                        f"用户{user_id}封禁成功，预计解封时间{detail}"
+                    )
+                else:
+                    chain = MessageChain().message(f"{detail}")
+
+                self.write_ban(self.ban_list)
         await event.send(chain)
 
     @filter.command("sf_unban")
@@ -109,30 +126,20 @@ class MyPlugin(Star):
         async with self._sf_lock:
             config = self.context.get_config(event.unified_msg_origin)
 
-            if event.get_sender_id() not in config["admins_id"]:
-                chain = MessageChain().message("你不是管理员，无法使用该命令")
-                await event.send(chain)
-                return
-
             if plat_name is None:
                 plat_name = event.platform_meta.name
-            if plat_name not in self.ban_list["available_platforms"]:
-                chain = MessageChain().message(
-                    f"所选消息平台{plat_name}不存在，请核实后重试"
-                )
-                await event.send(chain)
-                return
-            if user_id not in self.ban_list["banners"][plat_name]:
-                chain = MessageChain().message("该用户不在封禁列表中，请核实后重试")
-                await event.send(chain)
-                return
 
-            self.ban_list["banners"][plat_name].pop(user_id)
-            if user_id in self.ban_list["prohibits"][plat_name]:
-                self.ban_list["prohibits"][plat_name].pop(user_id)
-            self.write_ban(self.ban_list)
+            chain = self.check_user(event.get_sender_id(), config, [plat_name])
+            if chain is None:
+                if user_id not in self.ban_list["banners"][plat_name]:
+                    chain = MessageChain().message("该用户不在封禁列表中，请核实后重试")
+                else:
+                    self.ban_list["banners"][plat_name].pop(user_id)
+                    if user_id in self.ban_list["prohibits"][plat_name]:
+                        self.ban_list["prohibits"][plat_name].pop(user_id)
+                    self.write_ban(self.ban_list)
 
-            chain = MessageChain().message("解封操作成功！")
+                    chain = MessageChain().message("解封操作成功！")
         await event.send(chain)
 
     @filter.command("sf_bancount")
@@ -147,48 +154,28 @@ class MyPlugin(Star):
         async with self._sf_lock:
             config = self.context.get_config(event.unified_msg_origin)
 
-            if event.get_sender_id() not in config["admins_id"]:
-                chain = MessageChain().message("你不是管理员，无法使用该命令")
-                await event.send(chain)
-                return
-
-            if (
-                plat_name is not None
-                and plat_name not in self.ban_list["available_platforms"]
-            ):
-                chain = MessageChain().message(
-                    f"所选消息平台{plat_name}不存在，请核实后重试"
-                )
-                await event.send(chain)
-                return
-
-            try:
-                ban_time = pendulum.parse(times)
-            except pendulum.parsing.exceptions.ParserError:
-                chain = MessageChain().message(
-                    "这不是一个符合ISO8601规范的时间持续时间，请在核实后重试"
-                )
-                await event.send(chain)
-                return
-
             if plat_name is not None:
                 plat_name = [plat_name]
             else:
                 plat_name = self.ban_list["available_platforms"]
 
-            res_str = "封禁结果返回：\n"
-            for plat in plat_name:
-                res_str += f"平台{plat}:\n"
-                for key, user in self.ban_list["prohibits"][plat].items():
-                    if len(user) >= count:
-                        res, detail = await self.ban_user(key, plat, ban_time)
-                        res_str += f"用户{key}:"
-                        if res == "Success":
-                            res_str += f"封禁成功，预计解封时间{detail}\n"
-                        else:
-                            res_str += f"{detail}\n"
-            self.write_ban(self.ban_list)
-            chain = MessageChain().message(res_str)
+            chain = self.check_user(event.get_sender_id(), config, plat_name, times)
+
+            if chain is None:
+                ban_time = pendulum.parse(times)
+                res_str = "封禁结果返回：\n"
+                for plat in plat_name:
+                    res_str += f"平台{plat}:\n"
+                    for key, user in self.ban_list["prohibits"][plat].items():
+                        if len(user) >= count:
+                            res, detail = await self.ban_user(key, plat, ban_time)
+                            res_str += f"用户{key}:"
+                            if res == "Success":
+                                res_str += f"封禁成功，预计解封时间{detail}\n"
+                            else:
+                                res_str += f"{detail}\n"
+                self.write_ban(self.ban_list)
+                chain = MessageChain().message(res_str)
         await event.send(chain)
 
     @filter.command("sf_check")
@@ -199,29 +186,19 @@ class MyPlugin(Star):
 
             if plat_name is None:
                 plat_name = self.config["available_platforms"]
-            elif plat_name not in self.config["available_platforms"]:
-                chain = MessageChain().message("您提供的平台不在插件配置范围内")
-                await event.send(chain)
-                return
-            else:
-                plat_name = [plat_name]
 
-            if event.get_sender_id() not in config["admins_id"]:
-                chain = MessageChain().message(
-                    "该命令仅管理员有权使用，您不是管理员，无法使用"
-                )
-                await event.send(chain)
-                return
+            chain = self.check_user(event.get_sender_id(), config, plat_name)
 
-            prohibit_str = "目前的所有违规历史消息：\n"
-            for key in plat_name:
-                prohibit_str += f"消息平台{key}:\n"
-                for user, msg_list in self.ban_list["prohibits"][key].items():
-                    prohibit_str += f"用户id：{user} 违规消息数:{len(msg_list)}条\n"
-                    for words in msg_list:
-                        prohibit_str += f"{words}\n"
-                    prohibit_str += "\n"
-            chain = MessageChain().message(prohibit_str)
+            if chain is None:
+                prohibit_str = "目前的所有违规历史消息：\n"
+                for key in plat_name:
+                    prohibit_str += f"消息平台{key}:\n"
+                    for user, msg_list in self.ban_list["prohibits"][key].items():
+                        prohibit_str += f"用户id：{user} 违规消息数:{len(msg_list)}条\n"
+                        for words in msg_list:
+                            prohibit_str += f"{words}\n"
+                        prohibit_str += "\n"
+                chain = MessageChain().message(prohibit_str)
         await event.send(chain)
 
     async def unban_all(self):
@@ -240,38 +217,24 @@ class MyPlugin(Star):
         async with self._sf_lock:
             config = self.context.get_config(event.unified_msg_origin)
 
-            if event.get_sender_id() not in config["admins_id"]:
-                chain = MessageChain().message(
-                    "该命令仅管理员有权使用，您不是管理员，无法使用"
-                )
-                await event.send(chain)
-                return
-
-            if (
-                plat_name is not None
-                and plat_name not in self.ban_list["available_platforms"]
-            ):
-                chain = MessageChain().message(
-                    f"消息平台{plat_name}不可用，请核实配置选项"
-                )
-                await event.send(chain)
-                return
-
-            if await self.unban_all():
-                self.write_ban(self.ban_list)
-
             if plat_name is not None:
                 plat_name = [plat_name]
             else:
                 plat_name = self.ban_list["available_platforms"]
 
-            ban_str = "目前封禁中的用户：\n"
-            for key in plat_name:
-                ban_str += f"消息平台：{key}\n"
-                for user, times in self.ban_list["banners"][key].items():
-                    except_time = datetime.datetime.fromtimestamp(times)
-                    ban_str += f"用户{user},预计解封时间为{except_time.strftime('%Y年%m月%d日 %H:%M:%S')}\n"
-            chain = MessageChain().message(ban_str)
+            chain = self.check_user(event.get_sender_id(), config, plat_name)
+
+            if chain is None:
+                if await self.unban_all():
+                    self.write_ban(self.ban_list)
+
+                ban_str = "目前封禁中的用户：\n"
+                for key in plat_name:
+                    ban_str += f"消息平台：{key}\n"
+                    for user, times in self.ban_list["banners"][key].items():
+                        except_time = datetime.datetime.fromtimestamp(times)
+                        ban_str += f"用户{user},预计解封时间为{except_time.strftime('%Y年%m月%d日 %H:%M:%S')}\n"
+                chain = MessageChain().message(ban_str)
         await event.send(chain)
 
     @filter.command("sf_clear")
@@ -282,38 +245,26 @@ class MyPlugin(Star):
         async with self._sf_lock:
             config = self.context.get_config(event.unified_msg_origin)
 
-            if event.get_sender_id() not in config["admins_id"]:
-                chain = MessageChain().message(
-                    "该命令仅管理员有权使用，您不是管理员，无法使用"
-                )
-                await event.send(chain)
-                return
-
-            if (
-                plat_name is not None
-                and plat_name not in self.ban_list["available_platforms"]
-            ):
-                chain = MessageChain().message(
-                    f"消息平台{plat_name}不可用，请核实配置选项"
-                )
-                await event.send(chain)
-                return
-
             if plat_name is None:
                 plat_name = self.ban_list["available_platforms"]
             else:
                 plat_name = [plat_name]
 
-            for plat in plat_name:
-                if user_id in self.ban_list["prohibits"][plat]:
-                    send_str = f"用户{user_id}的违规消息{self.ban_list['prohibits'][plat][user_id]}将会被清除"
-                    self.ban_list["prohibits"][plat].pop(user_id)
+            chain = self.check_user(event.get_sender_id(), config, plat_name)
+            flag = 0
+
+            if chain is None:
+                for plat in plat_name:
+                    if user_id in self.ban_list["prohibits"][plat]:
+                        send_str = f"用户{user_id}的违规消息{self.ban_list['prohibits'][plat][user_id]}将会被清除"
+                        self.ban_list["prohibits"][plat].pop(user_id)
+                        chain = MessageChain().message(send_str)
+                        self.write_ban(self.ban_list)
+                        flag = 1
+                        break
+                if not flag:
+                    send_str = f"未找到用户{user_id}的违规消息，请使用/sf_check来查看当前记录的所有平台的违规消息"
                     chain = MessageChain().message(send_str)
-                    await event.send(chain)
-                    self.write_ban(self.ban_list)
-                    return
-            send_str = f"未找到用户{user_id}的违规消息，请使用/sf_check来查看当前记录的所有平台的违规消息"
-            chain = MessageChain().message(send_str)
         await event.send(chain)
 
     def get_ban_list(self):
@@ -366,7 +317,7 @@ class MyPlugin(Star):
         sender_plat = event.platform_meta.name
         if sender_plat not in self.ban_list["available_platforms"]:
             return
-
+        is_banned = 0
         async with self._sf_lock:
             if (
                 sender_plat in self.ban_list["available_platforms"]
@@ -382,9 +333,12 @@ class MyPlugin(Star):
                     chain = MessageChain().message(
                         f"你在被封禁中，具体情况请联系管理员。预计解封时间:{except_time.strftime('%Y年%m月%d日 %H:%M:%S')}"
                     )
-                    await event.send(chain)
                     event.stop_event()
-                    return
+                    is_banned = 1
+
+        if is_banned:
+            await event.send(chain)
+            return
 
         system_prompt = (
             await self.context.persona_manager.get_persona(self.config["filter_prompt"])
