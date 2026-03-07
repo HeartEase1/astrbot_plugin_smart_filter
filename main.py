@@ -162,6 +162,8 @@ class MyPlugin(Star):
             chain = self.check_user(event.get_sender_id(), config, plat_name, times)
 
             if chain is None:
+                if await self.unban_all():
+                    self.write_ban(self.ban_list)
                 ban_time = pendulum.parse(times)
                 res_str = "封禁结果返回：\n"
                 for plat in plat_name:
@@ -190,6 +192,8 @@ class MyPlugin(Star):
             chain = self.check_user(event.get_sender_id(), config, plat_name)
 
             if chain is None:
+                if await self.unban_all:
+                    self.write_ban(self.ban_list)
                 prohibit_str = "目前的所有违规历史消息：\n"
                 for key in plat_name:
                     prohibit_str += f"消息平台{key}:\n"
