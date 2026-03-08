@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import datetime
 import json
 import time
@@ -14,6 +15,7 @@ from astrbot.api.star import Context, Star, StarTools
 
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
+        """同步初始化行为，主要是为了定义自身的各种属性"""
         super().__init__(context)
         self.config = config
         self.ban_list = None
@@ -26,19 +28,40 @@ class MyPlugin(Star):
             await self.handle_update()
 
     async def handle_update(self):
+        """处理配置项的更新行为"""
         for key in list(self.ban_list["prohibits"]):
             if key not in self.config["available_platforms"]:
                 self.ban_list["prohibits"].pop(key, None)
         for key in list(self.ban_list["banners"]):
             if key not in self.config["available_platforms"]:
                 self.ban_list["banners"].pop(key, None)
+        for key in list(self.ban_list["white_list"]):
+            if key not in self.config["available_platforms"]:
+                self.ban_list["white_list"].pop(key, None)
         for key in self.config["available_platforms"]:
             if key not in self.ban_list["prohibits"]:
                 self.ban_list["prohibits"][key] = {}
             if key not in self.ban_list["banners"]:
                 self.ban_list["banners"][key] = {}
+            if key not in self.ban_list["white_list"]:
+                self.ban_list["white_list"][key] = []
         self.ban_list["available_platforms"] = self.config["available_platforms"]
+        await self.handle_white_list_update(self.config)
         self.write_ban(self.ban_list)
+
+    async def handle_white_list_update(self, config: AstrBotConfig):
+        """处理白名单的更新行为"""
+        for key in self.ban_list["available_platforms"]:
+            self.ban_list["white_list"][key] = []
+        for user_item in config["white_list"]:
+            if (
+                user_item["__template_key"] != "white_list_temp"
+                or user_item["platform"] not in self.ban_list["available_platforms"]
+            ):
+                continue
+            self.ban_list["white_list"][user_item["platform"]].append(
+                user_item["user_id"]
+            )
 
     async def ban_user(
         self, user_id: str, platform: str, times: pendulum.Duration
@@ -271,6 +294,37 @@ class MyPlugin(Star):
                     chain = MessageChain().message(send_str)
         await event.send(chain)
 
+    def check_list_format(self, ban_list):
+        legal_list_format = [
+            {
+                "name": "available_platforms",
+                "type": list,
+                "default": [],
+            },
+            {
+                "name": "prohibits",
+                "type": dict,
+                "default": {},
+            },
+            {
+                "name": "banners",
+                "type": dict,
+                "default": {},
+            },
+            {
+                "name": "white_list",
+                "type": dict,
+                "default": {},
+            },
+        ]
+        for std_item in legal_list_format:
+            if not (
+                ban_list.get(std_item["name"], None) is not None
+                and isinstance(ban_list[std_item["name"]], std_item["type"])
+            ):
+                ban_list[std_item["name"]] = copy.deepcopy(std_item["default"])
+        return ban_list
+
     def get_ban_list(self):
         data_dir = StarTools.get_data_dir()
         if not data_dir.exists():
@@ -283,6 +337,7 @@ class MyPlugin(Star):
                 "available_platforms": [],
                 "prohibits": {},
                 "banners": {},
+                "white_list": {},
             }
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(default_banlist, f, ensure_ascii=False, indent=4)
@@ -291,6 +346,7 @@ class MyPlugin(Star):
         try:
             with open(file_path, encoding="utf-8") as f:
                 banlist = json.load(f)
+                banlist = self.check_list_format(banlist)
         except Exception as e:
             logger.error(e)
             raise e
@@ -344,6 +400,11 @@ class MyPlugin(Star):
             await event.send(chain)
             return
 
+        # 处理白名单逻辑
+        if sender_id in self.ban_list["white_list"][sender_plat]:
+            logger.info(f"用户{sender_id}在白名单内，跳过插件处理逻辑")
+            return
+
         system_prompt = (
             await self.context.persona_manager.get_persona(self.config["filter_prompt"])
         ).system_prompt
@@ -362,7 +423,7 @@ class MyPlugin(Star):
             else:
                 if self.config["filter_block"] not in filter_res.completion_text:
                     return
-            filter_reasoning_res = filter_res.reasoning_content
+            filter_reasoning_res = filter_res.raw_completion
         except Exception:
             error_msg = traceback.format_exc()
             logger.error(error_msg)

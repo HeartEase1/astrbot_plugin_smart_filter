@@ -59,5 +59,25 @@
         "description" : "可用消息平台",
         "hint" : "你现在拥有的消息平台名称（例如aiocqhttp）",
         "type" : "list"
+    },
+    "white_list" : {
+        "description" : "白名单设置",
+        "hint" : "审核插件会跳过的用户设置，对于每个白名单项需要同时填写消息平台和用户id",
+        "type" : "template_list",
+        "templates" : {
+            "white_list_temp" : {
+                "name" : "用户白名单项",
+                "items" : {
+                    "platform" : {
+                        "description" : "用户消息平台名称",
+                        "type" : "string"
+                    },
+                    "user_id" : {
+                        "description" : "用户id",
+                        "type" : "string"
+                    }
+                }
+            }
+        }
     }
 }
